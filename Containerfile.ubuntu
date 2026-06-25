@@ -1,0 +1,124 @@
+# Containerfile.ubuntu — llama-rocmfpx-strix on Ubuntu 24.04
+#
+# Why Ubuntu (and when to use this vs Containerfile.fedora)?
+#   Ubuntu is the most common container base. ROCm 7.2.2 ships an
+#   official Ubuntu 24.04 dev image, so this is the path of least
+#   surprise for most users. The trade-off is that Mesa 26.1.3
+#   source build on Ubuntu 24.04 needs more build deps than Fedora
+#   (notably libpolly-18-dev + libisl-dev for the static LLVM
+#   link). If you have a Fedora host and want a one-to-one match
+#   with the working M5 build, use Containerfile.fedora instead.
+#
+# Post-mortems for the Ubuntu build dep chain (read before debugging):
+#   - Knowledge/post-mortems/2026-06-26-container-meson-version-mismatch.md
+#   - Knowledge/post-mortems/2026-06-26-container-mesa-missing-mako-yaml.md
+#   - Knowledge/post-mortems/2026-06-26-container-mesa-missing-bison-flex.md
+#   - Knowledge/post-mortems/2026-06-26-container-polly-link-error-and-strategy-pivot.md
+#
+# Build:
+#   podman build -t llama-rocmfpx-strix:ubuntu-24.04 -f Containerfile.ubuntu .
+#
+# Run:
+#   podman run --rm --device /dev/dri --group-add keep-groups \
+#     -v ~/.cache/huggingface:/root/.cache/huggingface \
+#     llama-rocmfpx-strix:ubuntu-24.04 \
+#     --model <model.gguf> --port 8080
+
+FROM rocm/dev-ubuntu-24.04:7.2.2
+
+# Avoid interactive prompts from apt during build
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Build deps for Mesa + ROCmFPX + a few runtime libs the engine wants.
+# Why each:
+#   build-essential, cmake, ninja-build, pkg-config  -- toolchain
+#   git                                            -- clone mesa + ROCmFPX
+#   meson, clang                                   -- Mesa's build system + compiler
+#   llvm-dev, libclang-dev                         -- Mesa links against LLVM
+#   libdrm-dev, libelf-dev                         -- Mesa deps for kernel mgmt
+#   libwayland-dev, libxshmfence-dev               -- Mesa Wayland platform
+#   libxext-dev, libxfixes-dev                     -- Mesa X11 deps even though
+#                                                     we disable GLX, some headers
+#                                                     still get pulled
+#   glslang-tools, spirv-tools                     -- Vulkan shader compilation
+#   ccache                                         -- rebuild speedup
+#   mold                                           -- faster linker than ld/lld
+#   python3, python3-pip, python3-venv             -- convert_hf_to_gguf.py etc.
+#   libvulkan1, mesa-vulkan-drivers                -- system Vulkan loader + RADV
+#                                                     (overridden by LD_PRELOAD at
+#                                                     runtime, but loader is needed)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential cmake ninja-build pkg-config git \
+        meson clang llvm-dev libclang-dev libllvm18 \
+        libdrm-dev libelf-dev \
+        libwayland-dev libxshmfence-dev libxext-dev libxfixes-dev \
+        glslang-tools spirv-tools \
+        bison flex \
+        libpolly-18-dev libisl-dev \
+        ccache mold \
+        python3 python3-pip python3-venv \
+        python3-mako python3-yaml \
+        libvulkan1 mesa-vulkan-drivers \
+        wget ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    # Mesa 26.1.3 requires meson >= 1.4.0; Ubuntu 24.04 ships 1.3.2.
+    # Install a newer meson into a venv and use it for the Mesa build only.
+    # See post-mortem: 2026-06-26-container-meson-version-mismatch
+    && python3 -m venv /opt/build-tools \
+    && /opt/build-tools/bin/pip install --no-cache-dir --upgrade pip meson ninja \
+    && ln -sf /opt/build-tools/bin/meson /usr/local/bin/meson-new \
+    && ln -sf /opt/build-tools/bin/ninja /usr/local/bin/ninja-new
+
+# --- Layer 2: Mesa 26.1.3 RADV from source ---
+ARG MESA_TAG=mesa-26.1.3
+RUN git clone --depth 1 --branch ${MESA_TAG} \
+        https://gitlab.freedesktop.org/mesa/mesa.git /src/mesa \
+    && cd /src/mesa \
+    && meson-new setup build \
+        --prefix=/opt/mesa-26.1.3 \
+        --buildtype=release \
+        -Dplatforms=wayland \
+        -Dgallium-drivers=radeonsi \
+        -Dvulkan-drivers=amd \
+        -Dllvm=enabled \
+        -Dshared-llvm=disabled \
+        -Dlibunwind=disabled \
+        -Dvalgrind=disabled \
+        -Degl=disabled \
+        -Dgles1=disabled \
+        -Dgles2=enabled \
+        -Dglx=disabled \
+        -Dgbm=disabled \
+    && ninja-new -C build -j$(nproc) \
+    && ninja-new -C build install \
+    && rm -rf /src/mesa
+
+# --- Layer 3: ciru-ai/ROCmFPX from source ---
+ARG ROCMFPX_REF=main
+RUN git clone --depth 1 --branch ${ROCMFPX_REF} \
+        https://github.com/ciru-ai/ROCmFPX.git /src/ROCmFPX \
+    && cd /src/ROCmFPX \
+    && cmake -B build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/opt/llama.cpp \
+        -DGGML_HIP=ON \
+        -DGGML_VULKAN=ON \
+        -DAMDGPU_TARGETS=gfx1151 \
+        -DGGML_CPU=OFF \
+        -DGGML_BLAS=OFF \
+        -DGGML_CUDA=OFF \
+        -DGGML_METAL=OFF \
+        -DGGML_OPENCL=OFF \
+        -DGGML_NATIVE=OFF \
+        -DGGML_LTO=OFF \
+    && cmake --build build --config Release -j$(nproc) \
+    && cmake --install build \
+    && rm -rf /src/ROCmFPX
+
+# --- Layer 4: entrypoint ---
+# entrypoint.sh sets the 5 Strix Halo env vars and execs llama-server with $@
+# (model path, sampling flags, etc. all come from the run command, not the image)
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

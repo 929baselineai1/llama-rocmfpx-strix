@@ -1,0 +1,19 @@
+# Build artifacts
+*.log
+*.tmp
+*.swp
+
+# Local image tags (don't commit these; build.sh creates them)
+.build-tmp/
+
+# Editor cruft
+.vscode/
+.idea/
+.DS_Store
+
+# Local models (don't ever commit)
+models/
+*.gguf
+
+# Cache dirs
+.ccache/
