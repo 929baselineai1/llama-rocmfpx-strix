@@ -85,8 +85,14 @@ RUN dnf install -y --setopt=install_weak_deps=False --best \
         glslang spirv-tools \
         bison flex \
         expat-devel zlib-devel libzstd-devel libxml2-devel \
-        # --- ROCm (from the rocm.repo we just wrote) ---
-        rocm-hip-devel rocm-opencl rocm-comgr rocm-llvm \
+        # --- ROCm 7.2.2 (from the rocm.repo we just wrote; these are AMD's
+        #     actual package names on el10, NOT Fedora's rocm-runtime 6.4.2
+        #     names. Key swaps vs Ubuntu's rocm/dev image: hip-devel not
+        #     rocm-hip-devel, comgr not rocm-comgr.)
+        hip-devel hipcc hip-runtime-amd \
+        rocblas-devel hipblas-devel \
+        comgr rocm-llvm rocm-opencl \
+        hsa-rocr hsa-rocr-devel \
         # --- Misc ---
         git wget curl ca-certificates tar bash \
     && dnf clean all \
