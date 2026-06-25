@@ -89,7 +89,12 @@ RUN dnf install -y --setopt=install_weak_deps=False \
         #   zstd-devel      -> libzstd-devel
         libdrm-devel elfutils-libelf-devel wayland-devel \
         libxshmfence-devel libXext-devel libXfixes-devel \
-        glslang spirv-tools \
+        # --- Vulkan loader/headers + glslc. Mesa below provides
+        #     libvulkan_radeon.so (the AMD ICD), but we also need the
+        #     libvulkan.so loader that dispatches to it, plus the
+        #     Vulkan headers and glslc compiler that ggml's
+        #     FindVulkan.cmake looks for. These are all on Fedora 43.
+        vulkan-loader-devel vulkan-headers glslc \
         bison flex \
         expat-devel zlib-devel libzstd-devel libxml2-devel \
         # --- ROCm 7.2.2 (from the rocm.repo we just wrote; these are AMD's
