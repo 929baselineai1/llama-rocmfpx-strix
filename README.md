@@ -14,18 +14,18 @@ No "auto-detect" logic. Pick the file at build time, that's it.
 ## Quick start
 
 ```bash
-# Pull from Docker Hub
-podman pull baselineai/llama-rocmfpx-strix:fedora-43
+# Pull from GitHub Container Registry
+podman pull ghcr.io/929baselineai1/llama-rocmfpx-strix:fedora-43
 
-# Run
+# Run (point MODEL_PATH at any GGUF on the host)
 podman run --rm -it \
     --device /dev/dri \
-    --group-add keep-groups \
+    --group-add video --group-add render \
     --security-opt seccomp=unconfined \
-    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -v /path/to/models:/models:ro \
     -p 8080:8080 \
-    baselineai/llama-rocmfpx-strix:fedora-43 \
-    --model <model.gguf> --port 8080
+    ghcr.io/929baselineai1/llama-rocmfpx-strix:fedora-43 \
+    -m /models/<your-model>.gguf --port 8080 --host 0.0.0.0 -ngl 999
 ```
 
 The `entrypoint.sh` sets the 5 Strix Halo env vars (`HSA_OVERRIDE_GFX_VERSION`, `RADV_PERFTEST=gpl`, `GGML_HIP_ENABLE_UNIFIED_MEMORY=1`, `LD_PRELOAD=libvulkan_radeon.so`, `VK_DRIVER_FILES=…`) before execing `llama-server`.
@@ -33,22 +33,22 @@ The `entrypoint.sh` sets the 5 Strix Halo env vars (`HSA_OVERRIDE_GFX_VERSION`, 
 ## Build locally
 
 ```bash
-git clone https://github.com/baselineai/llama-rocmfpx-strix
+git clone https://github.com/929baselineai1/llama-rocmfpx-strix
 cd llama-rocmfpx-strix
 
 # Fedora
 podman build -t llama-rocmfpx-strix:fedora-43 -f Containerfile.fedora .
 
 # Ubuntu
-podman build -t llama-rocmfpx-strix:ubuntu-24.04 -f Containerfile.ubuntu .
+podman build -t llama-rocmfpx-strix:ubuntu-24-04 -f Containerfile.ubuntu .
 ```
 
 ## What this image gives you
 
-- **ROCmFPX** — `ciru-ai/ROCmFPX` (llama.cpp fork with ROCmFP4 + MTP speculative decoding). Built from `main`.
+- **ROCmFPX** — `ciru-ai/ROCmFPX` (llama.cpp fork with ROCmFP4 + MTP speculative decoding). Built from `chadrockv2-runner-20260622` tag.
 - **Mesa 26.1.3 RADV** — built from source with the exact flags used on the working M5 host. Static-LLVM link, Wayland-only platform, no GL/GLX/GBM.
 - **Strix Halo tuned** — `gfx1151` baked in, unified memory enabled, `RADV_PERFTEST=gpl` for the RDNA3+ perf library.
-- **~1.5 GB** image (Fedora) or **~1.8 GB** (Ubuntu, due to ROCm dev base).
+- **~10.7 GB** image (Fedora) or **~12 GB** (Ubuntu, due to ROCm dev base). The Mesa + ROCmFPX builds are the bulk.
 
 ## Verified performance
 
@@ -57,19 +57,22 @@ On the M5 host (Radeon 8060S, Fedora 43, Mesa 26.1.3, ROCm 7.2.2, ROCmFPX main):
 ## Files in this repo
 
 ```
-Containerfile.fedora      # Fedora 43 base, ~1.5 GB image
-Containerfile.ubuntu      # Ubuntu 24.04 base, ~1.8 GB image
+Containerfile.fedora      # Fedora 43 base, ~10.7 GB image
+Containerfile.ubuntu      # Ubuntu 24.04 base, ~12 GB image
 entrypoint.sh             # Strix Halo env vars + exec llama-server
 docker-bake.hcl           # Multi-tag build definitions for buildx/bake
-.github/workflows/build.yml  # CI: build + push to Docker Hub on tag
+.github/workflows/build.yml  # CI: build + push to ghcr.io on `v*` tag
 ```
 
 ## CI / publishing
 
 Tagged as:
-- `baselineai/llama-rocmfpx-strix:fedora-43`
-- `baselineai/llama-rocmfpx-strix:ubuntu-24.04`
-- `baselineai/llama-rocmfpx-strix:latest` (alias to fedora-43, the verified path)
+- `ghcr.io/929baselineai1/llama-rocmfpx-strix:fedora-43`
+- `ghcr.io/929baselineai1/llama-rocmfpx-strix:ubuntu-24-04`
+- `ghcr.io/929baselineai1/llama-rocmfpx-strix:latest` (alias to fedora-43, the verified path)
+
+Triggered by pushing a `v*` tag (e.g. `git tag v0.1.0 && git push origin v0.1.0`).
+Uses `GITHUB_TOKEN` for auth — no Docker Hub secrets needed.
 
 ## Credits
 
