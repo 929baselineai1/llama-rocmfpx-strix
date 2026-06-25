@@ -65,7 +65,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ccache mold \
         python3 python3-pip python3-venv \
         python3-mako python3-yaml \
-        hipblas-dev rocm-device-libs \
+        hipblas-dev rocblas-dev rocm-device-libs \
         libvulkan1 mesa-vulkan-drivers \
         wget ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
