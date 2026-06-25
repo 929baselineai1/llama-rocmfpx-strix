@@ -172,7 +172,16 @@ RUN git clone --depth 1 --branch ${ROCMFPX_REF} https://github.com/ciru-ai/ROCmF
         -DCMAKE_INSTALL_PREFIX=/usr/local \
         -DGGML_HIP=ON \
         -DGGML_VULKAN=ON \
-        -DGGML_CPU=OFF \
+        # Re-enable GGML_CPU=ON. Earlier we tried OFF to keep the
+        # image small, but many llama-* tools (vdot, q8dot, cvector-
+        # generator, convert-llama2c-to-ggml, export-lora, ...) link
+        # against CPU-backend functions (ggml_get_type_traits_cpu,
+        # ggml_backend_cpu_init, ggml_set_f32_nd, ggml_backend_cpu_
+        # set_n_threads). Disabling CPU means those tools don't link.
+        # The CPU backend is small (~100 MB) and only matters for the
+        # few legacy CPU-only ops; HIP+Vulkan still do the real work
+        # at inference time.
+        -DGGML_CPU=ON \
         -DGGML_BLAS=OFF \
         -DGGML_CUDA=OFF \
         -DGGML_METAL=OFF \
