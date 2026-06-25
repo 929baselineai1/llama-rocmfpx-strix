@@ -95,6 +95,9 @@ RUN dnf install -y --setopt=install_weak_deps=False \
         #     Vulkan headers and glslc compiler that ggml's
         #     FindVulkan.cmake looks for. These are all on Fedora 43.
         vulkan-loader-devel vulkan-headers glslc \
+        # --- Mesa needs glslangValidator at build time (SPIR-V validation
+        #     of generated shaders) and spirv-tools for tooling tests.
+        glslang spirv-tools \
         bison flex \
         expat-devel zlib-devel libzstd-devel libxml2-devel \
         # --- ROCm 7.2.2 (from the rocm.repo we just wrote; these are AMD's
