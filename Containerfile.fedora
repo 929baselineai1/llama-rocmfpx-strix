@@ -98,6 +98,13 @@ RUN dnf install -y --setopt=install_weak_deps=False \
         # --- Mesa needs glslangValidator at build time (SPIR-V validation
         #     of generated shaders) and spirv-tools for tooling tests.
         glslang spirv-tools \
+        # --- compiler-rt ships libclang_rt.builtins.a which ggml-hip
+        #     links against for __builtin_atomic_* and friends. Without
+        #     it, ninja fails with "missing and no known rule to make it"
+        #     pointing at /usr/lib/clang/21/lib/x86_64-redhat-linux-gnu/
+        #     libclang_rt.builtins.a. The version must match clang's;
+        #     we install clang 21.1.8, so compiler-rt-21.1.8.
+        compiler-rt \
         bison flex \
         expat-devel zlib-devel libzstd-devel libxml2-devel \
         # --- ROCm 7.2.2 (from the rocm.repo we just wrote; these are AMD's
