@@ -95,13 +95,16 @@ RUN dnf install -y --setopt=install_weak_deps=False \
         # --- ROCm 7.2.2 (from the rocm.repo we just wrote; these are AMD's
         #     actual package names on el10, NOT Fedora's rocm-runtime 6.4.2
         #     names. Key swaps vs Ubuntu's rocm/dev image: hip-devel not
-        #     rocm-hip-devel, comgr not rocm-comgr. We do NOT install
-        #     rocm-llvm from the el10 repo because it conflicts with Fedora's
-        #     rocm-llvm-19 (which rocm-device-libs needs). Our build uses the
-        #     llvm 21 we install in the previous line.)
+        #     rocm-hip-devel, comgr not rocm-comgr.)
+        #     rocm-device-libs is REQUIRED — it ships libamdgcn.bc, hip.bc,
+        #     ocml.bc, opencl.bc, and the oclc_isa_version_*.bc files at
+        #     /opt/rocm-7.2.2/lib/llvm/lib/clang/22/lib/amdgcn/bitcode/.
+        #     Without it, ROCmFPX's cmake test program fails with
+        #     "cannot find ROCm device library; provide its path via
+        #     --rocm-path or --rocm-device-lib-path".
         hip-devel hipcc hip-runtime-amd \
         rocblas-devel hipblas-devel \
-        comgr rocm-opencl \
+        comgr rocm-opencl rocm-device-libs \
         hsa-rocr hsa-rocr-devel \
         # --- Misc ---
         git wget curl ca-certificates tar bash \
