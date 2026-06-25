@@ -1,74 +1,121 @@
 #!/usr/bin/env bash
-# Launch a llama-server inside the built image.
+# Launch llama-server with the Chadrock ROCmFP4 + MTP flags from
+# llm.ciru.ai/chadrock-rocmfpx/. Picks the model size based on the GGUF
+# filename so you don't have to remember which config applies.
 #
 # Usage:
-#   ./run.sh /path/to/model.gguf [extra llama-server flags...]
+#   ./run.sh /path/to/chadrock-model.gguf [extra llama-server flags...]
 #
-# The base (fedora or ubuntu) is auto-detected from the local image tags. You
-# can pin it with BASE=ubuntu or BASE=fedora to be explicit.
+# The binary built by ./build.sh lives in ~/ROCmFPX/build-strix-rocmfp4/bin/.
+# We invoke it directly so we can run from any working directory.
 #
-# Required runtime flags we add for you:
-#   --device /dev/dri             expose GPU device nodes (/dev/dri/renderD128)
-#   --group-add keep-groups        keep in-container user in host's render/video
-#                                  groups so they can read the device nodes
-#   --security-opt seccomp=unconfined  ROCm needs this; rocm-runtime makes
-#                                      ptrace-related syscalls the default
-#                                      seccomp filter rejects
-#   --network host                let llama-server bind :8080 directly; avoids
-#                                  container networking weirdness for high-
-#                                  throughput local APIs
-#   -v $MODEL_DIR:/models:ro      mount model files read-only at /models
-#
-# Everything else (host, port, ctx size, sampling flags, etc.) you pass yourself.
+# Flag sources: llm.ciru.ai/chadrock-rocmfpx/ llama-configs section.
+#   - 35B ACE/SABER ROCmFP4: n_max=4, ctx=32768, ctk=f16, ctv=f16
+#   - Qwable 5 27B ROCmFP4:   n_max=6, ctx=131072, ctk=q8_0, ctv=q8_0
 
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then
-    echo "usage: $0 /path/to/model.gguf [extra llama-server flags...]" >&2
-    echo "  example: $0 ~/models/Qwen3.6-35B.gguf --port 8080 -c 32768 -ngl 999" >&2
+    echo "usage: $0 /path/to/chadrock-model.gguf [extra llama-server flags...]" >&2
+    echo
+    echo "  example:"
+    echo "    ./run.sh ~/models/qwable-5-27b-chadrock-v2-rocmfp4.gguf"
+    echo "    ./run.sh ~/models/chadrock-35b-ace-saber-rocmfp4-mtp.gguf --port 8081"
     exit 1
-fi
-
-if ! command -v podman >/dev/null 2>&1; then
-    if command -v docker >/dev/null 2>&1; then
-        RUNTIME=docker
-    else
-        echo "error: neither podman nor docker found" >&2
-        exit 1
-    fi
-else
-    RUNTIME=podman
 fi
 
 MODEL_FILE="$(realpath "$1")"
-MODEL_DIR="$(dirname "${MODEL_FILE}")"
-MODEL_BASENAME="$(basename "${MODEL_FILE}")"
+if [ ! -f "${MODEL_FILE}" ]; then
+    echo "error: model file not found: ${MODEL_FILE}" >&2
+    exit 1
+fi
 shift
 
-# Pick image. If BASE is set, use that. Otherwise, prefer fedora if both exist.
-if [ -n "${BASE:-}" ]; then
-    case "${BASE}" in
-        fedora) IMAGE="llama-rocmfpx-strix:fedora-43" ;;
-        ubuntu) IMAGE="llama-rocmfpx-strix:ubuntu-24.04" ;;
-        *) echo "error: BASE must be 'fedora' or 'ubuntu' (got: ${BASE})" >&2; exit 1 ;;
-    esac
-elif "${RUNTIME}" image exists llama-rocmfpx-strix:fedora-43 2>/dev/null; then
-    IMAGE="llama-rocmfpx-strix:fedora-43"
-elif "${RUNTIME}" image exists llama-rocmfpx-strix:ubuntu-24.04 2>/dev/null; then
-    IMAGE="llama-rocmfpx-strix:ubuntu-24.04"
-else
-    echo "error: no built image found. Run ./build.sh first." >&2
+# Default port. Override by passing --port N as an extra flag.
+PORT="${PORT:-8080}"
+
+SERVER_BIN="${HOME}/ROCmFPX/build-strix-rocmfp4/bin/llama-server"
+if [ ! -x "${SERVER_BIN}" ]; then
+    echo "error: llama-server not built. Run ./build.sh first." >&2
     exit 1
 fi
 
-echo "==> using image: ${IMAGE}"
+# Pick the config based on the model filename. The two known Chadrock
+# families are 35B ACE/SABER (smaller ctx, tighter MTP cap) and Qwable 5 27B
+# (huge ctx, looser MTP cap). If neither matches, fall back to the 27B
+# defaults — they're more permissive and will at least start.
+MODEL_NAME="$(basename "${MODEL_FILE}")"
+case "${MODEL_NAME}" in
+    *35B*ace-saber*|*35B*ACE-SABER*|*35B-ACE-SABER*)
+        echo "==> detected 35B ACE/SABER model — using n_max=4, ctx=32768, ctk=f16"
+        N_MAX=4
+        CTX=32768
+        CTK="f16"
+        CTV="f16"
+        ;;
+    *qwable*|*Qwable*|*Qwable-5*|*27B*)
+        echo "==> detected 27B-class model — using n_max=6, ctx=131072, ctk=q8_0"
+        N_MAX=6
+        CTX=131072
+        CTK="q8_0"
+        CTV="q8_0"
+        ;;
+    *)
+        echo "warning: unrecognized model name '${MODEL_NAME}'"
+        echo "         falling back to 27B defaults (n_max=6, ctx=131072, ctk=q8_0)"
+        echo "         pass --n-max, -c, -ctk manually to override"
+        N_MAX=6
+        CTX=131072
+        CTK="q8_0"
+        CTV="q8_0"
+        ;;
+esac
 
-"${RUNTIME}" run --rm -it \
-    --device /dev/dri \
-    --group-add keep-groups \
-    --security-opt seccomp=unconfined \
-    --network host \
-    -v "${MODEL_DIR}:/models:ro" \
-    "${IMAGE}" \
-    -m "/models/${MODEL_BASENAME}" \
+echo "==> server:  ${SERVER_BIN}"
+echo "==> model:   ${MODEL_FILE}"
+echo "==> host:    0.0.0.0:${PORT}  (override with --port N as an extra flag)"
+echo
+
+exec "${SERVER_BIN}" \
+    -m "${MODEL_FILE}" \
+    --host 0.0.0.0 \
+    --port "${PORT}" \
+    --jinja \
+    -c "${CTX}" \
+    --reasoning off \
+    --reasoning-format none \
+    --reasoning-budget -1 \
+    --no-context-shift \
+    -dev Vulkan0 \
+    -ngl 999 \
+    -fa on \
+    -b 2048 \
+    -ub 512 \
+    -t 16 \
+    -tb 32 \
+    -ctk "${CTK}" \
+    -ctv "${CTV}" \
+    --temp 0 \
+    --top-p 0.95 \
+    --top-k 20 \
+    --seed 123 \
+    --parallel 1 \
+    --no-mmproj \
+    --metrics \
+    --no-webui \
+    --slot-prompt-similarity 0.0 \
+    --spec-type draft-mtp \
+    --spec-draft-device Vulkan0 \
+    --spec-draft-ngl all \
+    --spec-draft-threads 16 \
+    --spec-draft-threads-batch 32 \
+    --spec-draft-type-k f16 \
+    --spec-draft-type-v f16 \
+    --spec-draft-n-max "${N_MAX}" \
+    --spec-draft-n-min 0 \
+    --spec-draft-p-min 0.0 \
+    --spec-draft-p-split 0.20 \
+    --no-spec-draft-backend-sampling \
+    --spec-draft-poll 1 \
+    --spec-draft-poll-batch 1 \
     "$@"
