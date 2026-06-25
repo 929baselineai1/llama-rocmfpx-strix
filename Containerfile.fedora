@@ -165,6 +165,15 @@ RUN git clone --depth 1 --branch ${MESA_TAG} https://gitlab.freedesktop.org/mesa
 # ----------------------------------------------------------------------------
 WORKDIR /opt/src
 RUN git clone --depth 1 --branch ${ROCMFPX_REF} https://github.com/ciru-ai/ROCmFPX.git ROCmFPX \
+    # --- LOCAL PATCH (v0.1.6): fix upstream ROCmFPX missing include ---
+    # ggml/src/ggml-vulkan/ggml-vulkan.cpp uses `spv::` namespace at 24
+    # sites (lines 2251-2426) but does not `#include` SPIRV-Tools C++
+    # headers. Fedora's `SPIRV-Tools-devel` ships libspirv.hpp under
+    # /usr/include/spirv-tools/, so adding the include works without
+    # any extra package. TODO: remove this when fixed upstream.
+    && sed -i 's|#include <vulkan/vulkan.hpp>|#include <vulkan/vulkan.hpp>\n#include <spirv-tools/libspirv.hpp>  /* Hermes local patch v0.1.6: missing upstream */|' \
+        ROCmFPX/ggml/src/ggml-vulkan/ggml-vulkan.cpp \
+    && grep -q '#include <spirv-tools/libspirv.hpp>' ROCmFPX/ggml/src/ggml-vulkan/ggml-vulkan.cpp \
     && cd ROCmFPX \
     && CC=clang CXX=clang++ \
        cmake -S . -B build -G Ninja \

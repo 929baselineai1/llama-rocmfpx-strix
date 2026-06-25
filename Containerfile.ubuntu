@@ -108,6 +108,17 @@ RUN git clone --depth 1 --branch ${MESA_TAG} \
 ARG ROCMFPX_REF=chadrockv2-runner-20260622
 RUN git clone --depth 1 --branch ${ROCMFPX_REF} \
         https://github.com/ciru-ai/ROCmFPX.git /src/ROCmFPX \
+    # --- LOCAL PATCH (v0.1.6): fix upstream ROCmFPX missing include ---
+    # ggml/src/ggml-vulkan/ggml-vulkan.cpp uses `spv::` namespace at 24
+    # sites (lines 2251-2426) but does not `#include` SPIRV-Tools C++
+    # headers. This is a real bug in ciru-ai/ROCmFPX chadrockv2-runner-
+    # 20260622; we patch it locally here until the fix lands upstream.
+    # TODO: remove this sed when ROCmFPX adds the include upstream.
+    # Header IS shipped by Ubuntu's `spirv-tools` package at
+    # /usr/include/spirv-tools/libspirv.hpp, so no apt change needed.
+    && sed -i 's|#include <vulkan/vulkan.hpp>|#include <vulkan/vulkan.hpp>\n#include <spirv-tools/libspirv.hpp>  /* Hermes local patch v0.1.6: missing upstream */|' \
+        /src/ROCmFPX/ggml/src/ggml-vulkan/ggml-vulkan.cpp \
+    && grep -q '#include <spirv-tools/libspirv.hpp>' /src/ROCmFPX/ggml/src/ggml-vulkan/ggml-vulkan.cpp \
     && cd /src/ROCmFPX \
     && cmake -B build -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
