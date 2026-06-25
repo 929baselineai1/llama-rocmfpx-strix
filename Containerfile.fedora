@@ -185,7 +185,8 @@ RUN git clone --depth 1 --branch ${ROCMFPX_REF} https://github.com/ciru-ai/ROCmF
         # / llama-bench binaries link fine without CPU. Adding CPU
         # back just to satisfy tests would double the build time and
         # image size; we don't need them on an inference server.
-        -DBUILD_TESTS=OFF \
+        # (CMake option is LLAMA_BUILD_TESTS, not BUILD_TESTS.)
+        -DLLAMA_BUILD_TESTS=OFF \
     && cmake --build build --target install -j$(nproc) \
     && cd / && rm -rf /opt/src/ROCmFPX /opt/src/ROCmFPX/build
 
