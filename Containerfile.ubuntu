@@ -105,20 +105,32 @@ RUN git clone --depth 1 --branch ${MESA_TAG} \
 # Pin to the same tag as Containerfile.fedora so both images
 # are reproducible from the same engine source. Update this
 # tag in BOTH Containerfiles when bumping.
+ARG SPIRV_HEADERS_REF=vulkan-sdk-1.4.350.1
 ARG ROCMFPX_REF=chadrockv2-runner-20260622
+# --- LOCAL PATCH (v0.1.7): vendor SPIRV-Headers for `spv::` namespace ---
+# ggml/src/ggml-vulkan/ggml-vulkan.cpp uses 24 references to the `spv::`
+# namespace (WordCountShift, OpCodeMask, OpExtension, etc.) but ROCmFPX
+# does not `#include` SPIRV-Headers. Neither Ubuntu's `spirv-tools` nor
+# Fedora's `SPIRV-Tools-devel` ships `<spirv/unified1/spirv.hpp>` — that
+# header lives in the SPIRV-Headers Khronos repo. We vendor it into
+# /usr/include/spirv/unified1/ here. Self-checked before continuing.
+# TODO: remove when ciru-ai/ROCmFPX adds `#include <spirv/unified1/spirv.hpp>`.
+RUN git clone --depth 1 --branch ${SPIRV_HEADERS_REF} \
+        https://github.com/KhronosGroup/SPIRV-Headers.git /src/spirv-headers \
+    && mkdir -p /usr/include/spirv/unified1 \
+    && install -m 0644 /src/spirv-headers/include/spirv/unified1/spirv.hpp /usr/include/spirv/unified1/spirv.hpp \
+    && grep -q 'namespace spv ' /usr/include/spirv/unified1/spirv.hpp \
+    && rm -rf /src/spirv-headers
 RUN git clone --depth 1 --branch ${ROCMFPX_REF} \
         https://github.com/ciru-ai/ROCmFPX.git /src/ROCmFPX \
-    # --- LOCAL PATCH (v0.1.6): fix upstream ROCmFPX missing include ---
-    # ggml/src/ggml-vulkan/ggml-vulkan.cpp uses `spv::` namespace at 24
-    # sites (lines 2251-2426) but does not `#include` SPIRV-Tools C++
-    # headers. This is a real bug in ciru-ai/ROCmFPX chadrockv2-runner-
-    # 20260622; we patch it locally here until the fix lands upstream.
-    # TODO: remove this sed when ROCmFPX adds the include upstream.
-    # Header IS shipped by Ubuntu's `spirv-tools` package at
-    # /usr/include/spirv-tools/libspirv.hpp, so no apt change needed.
-    && sed -i 's|#include <vulkan/vulkan.hpp>|#include <vulkan/vulkan.hpp>\n#include <spirv-tools/libspirv.hpp>  /* Hermes local patch v0.1.6: missing upstream */|' \
+    # Inject `#include <spirv/unified1/spirv.hpp>` into ggml-vulkan.cpp right
+    # after `#include <vulkan/vulkan.hpp>`. Without this, the 24 `spv::X`
+    # references (lines 2251-2426) fail to compile with `'spv' has not been
+    # declared`. Header is now available at /usr/include/spirv/unified1/spirv.hpp
+    # thanks to the vendoring step above. Self-checked before continuing.
+    && sed -i 's|#include <vulkan/vulkan.hpp>|#include <vulkan/vulkan.hpp>\n#include <spirv/unified1/spirv.hpp>  /* Hermes local patch v0.1.7: vendored SPIRV-Headers */|' \
         /src/ROCmFPX/ggml/src/ggml-vulkan/ggml-vulkan.cpp \
-    && grep -q '#include <spirv-tools/libspirv.hpp>' /src/ROCmFPX/ggml/src/ggml-vulkan/ggml-vulkan.cpp \
+    && grep -q '#include <spirv/unified1/spirv.hpp>' /src/ROCmFPX/ggml/src/ggml-vulkan/ggml-vulkan.cpp \
     && cd /src/ROCmFPX \
     && cmake -B build -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
