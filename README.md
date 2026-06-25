@@ -11,6 +11,10 @@ Two bases provided — pick the one that matches your host:
 
 No "auto-detect" logic. Pick the file at build time, that's it.
 
+Both Containerfiles pin `ROCMFPX_REF=chadrockv2-runner-20260622` (the same tag that
+hit 140 tok/s on the M5 host). If you bump the engine, update this `ARG` in
+**both** files together — otherwise the two images drift apart.
+
 ## Quick start
 
 ```bash
@@ -52,7 +56,7 @@ podman build -t llama-rocmfpx-strix:ubuntu-24-04 -f Containerfile.ubuntu .
 
 ## Verified performance
 
-On the M5 host (Radeon 8060S, Fedora 43, Mesa 26.1.3, ROCm 7.2.2, ROCmFPX main): **~140 tok/s** on Qwen3.5-27B Q4_K_M. Container build reproduces the same flags; runtime throughput should match.
+On the M5 host (Radeon 8060S, Fedora 43, Mesa 26.1.3, ROCm 7.2.2, ROCmFPX chadrockv2-runner-20260622): **~140 tok/s** on Qwen3.5-27B Q4_K_M. Container build reproduces the same flags; runtime throughput should match.
 
 ## Files in this repo
 
