@@ -11,6 +11,14 @@ on:
         required: false
         default: 'false'
 
+# Default GITHUB_TOKEN has packages:read but NOT packages:write.
+# Must explicitly grant write to allow docker/build-push-action to
+# push to ghcr.io/<user>/<repo>. Without this, push fails with:
+#   denied: installation not allowed to Create organization package
+permissions:
+  contents: read
+  packages: write
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: 929baselineai1/llama-rocmfpx-strix
