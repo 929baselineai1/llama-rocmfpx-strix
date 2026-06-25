@@ -44,9 +44,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   ccache                                         -- rebuild speedup
 #   mold                                           -- faster linker than ld/lld
 #   python3, python3-pip, python3-venv             -- convert_hf_to_gguf.py etc.
-#   rocm-device-libs, hipblas-dev                  -- ROCmFPX cmake needs hipBLAS
-#                                                     config files. The rocm/dev
-#                                                     base image does NOT include
+#   rocm-device-libs, hipblas-dev, rocblas-dev      -- ROCmFPX cmake needs hipBLAS
+#                                                     AND rocBLAS config files
+#                                  ...[truncated]
 #                                                     them; install explicitly.
 #                                                     See post-mortem: 2026-06-26-
 #                                                     container-polly-link-error-
