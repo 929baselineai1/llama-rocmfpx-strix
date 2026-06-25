@@ -178,6 +178,14 @@ RUN git clone --depth 1 --branch ${ROCMFPX_REF} https://github.com/ciru-ai/ROCmF
         -DGGML_METAL=OFF \
         -DGGML_OPENCL=OFF \
         -DAMDGPU_TARGETS=gfx1151 \
+        # Skip llama.cpp's unit tests — they link against CPU-backend
+        # functions (ggml_threadpool_new, ggml_graph_plan, ggml_cpu_init,
+        # ggml_get_type_traits_cpu, ...) that we deliberately compiled
+        # out with -DGGML_CPU=OFF. The main llama-cli / llama-server
+        # / llama-bench binaries link fine without CPU. Adding CPU
+        # back just to satisfy tests would double the build time and
+        # image size; we don't need them on an inference server.
+        -DBUILD_TESTS=OFF \
     && cmake --build build --target install -j$(nproc) \
     && cd / && rm -rf /opt/src/ROCmFPX /opt/src/ROCmFPX/build
 
