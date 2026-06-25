@@ -196,6 +196,18 @@ RUN git clone --depth 1 --branch ${ROCMFPX_REF} https://github.com/ciru-ai/ROCmF
         # image size; we don't need them on an inference server.
         # (CMake option is LLAMA_BUILD_TESTS, not BUILD_TESTS.)
         -DLLAMA_BUILD_TESTS=OFF \
+        # Build llama-server without the embedded WebUI. The WebUI
+        # step (1) tries to npm-build from tools/server/webui/ and
+        # falls back to (2) downloading assets from huggingface.co/
+        # buckets/ggml-org/llama-ui/resolve/latest. The container
+        # has no nodejs/npm, and the HF download returns 404. The
+        # build aborts on 'file failed to open for reading' for
+        # tools/server/public/{index.html,bundle.js,bundle.css,
+        # loading.html}. The server binary still builds and serves
+        # the OpenAI-compatible /completion /v1/chat/completions
+        # APIs — we just don't get the web playground in the
+        # container. Users hit it with curl or run their own UI.
+        -DLLAMA_BUILD_WEBUI=OFF \
     && cmake --build build --target install -j$(nproc) \
     && cd / && rm -rf /opt/src/ROCmFPX /opt/src/ROCmFPX/build
 
