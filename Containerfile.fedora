@@ -60,6 +60,8 @@ baseurl=https://repo.radeon.com/rocm/el10/7.2.2/main
 enabled=1
 gpgcheck=1
 gpgkey=https://repo.radeon.com/rocm/rocm.gpg.key
+priority=1
+repo_gpgcheck=0
 
 [amdgpu]
 name=amdgpu (el10)
@@ -67,9 +69,11 @@ baseurl=https://repo.radeon.com/amdgpu/latest/el10/main
 enabled=1
 gpgcheck=1
 gpgkey=https://repo.radeon.com/rocm/rocm.gpg.key
+priority=1
+repo_gpgcheck=0
 EOF
 
-RUN dnf install -y --setopt=install_weak_deps=False --best \
+RUN dnf install -y --setopt=install_weak_deps=False \
         # --- Compiler + build tools ---
         clang llvm llvm-devel llvm-libs lld \
         meson ninja-build ccache mold \
@@ -88,10 +92,13 @@ RUN dnf install -y --setopt=install_weak_deps=False --best \
         # --- ROCm 7.2.2 (from the rocm.repo we just wrote; these are AMD's
         #     actual package names on el10, NOT Fedora's rocm-runtime 6.4.2
         #     names. Key swaps vs Ubuntu's rocm/dev image: hip-devel not
-        #     rocm-hip-devel, comgr not rocm-comgr.)
+        #     rocm-hip-devel, comgr not rocm-comgr. We do NOT install
+        #     rocm-llvm from the el10 repo because it conflicts with Fedora's
+        #     rocm-llvm-19 (which rocm-device-libs needs). Our build uses the
+        #     llvm 21 we install in the previous line.)
         hip-devel hipcc hip-runtime-amd \
         rocblas-devel hipblas-devel \
-        comgr rocm-llvm rocm-opencl \
+        comgr rocm-opencl \
         hsa-rocr hsa-rocr-devel \
         # --- Misc ---
         git wget curl ca-certificates tar bash \
