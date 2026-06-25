@@ -33,10 +33,13 @@ ARG CCACHE_DIR=/ccache
 
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    ROCM_PATH=/usr \
-    HIP_PATH=/usr \
-    PATH=/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-    LD_LIBRARY_PATH=/usr/lib64:/usr/local/lib64 \
+    # AMD's el10 ROCm packages install to /opt/rocm-7.2.2 (with /opt/rocm
+    # as a symlink via /etc/alternatives/rocm). Same layout as Ubuntu's
+    # rocm/dev-ubuntu-24.04:7.2.2 image.
+    ROCM_PATH=/opt/rocm \
+    HIP_PATH=/opt/rocm \
+    PATH=/opt/rocm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    LD_LIBRARY_PATH=/opt/rocm/lib:/usr/local/lib64 \
     CCACHE_DIR=/ccache
 
 # ----------------------------------------------------------------------------
