@@ -105,6 +105,12 @@ RUN dnf install -y --setopt=install_weak_deps=False \
         #     libclang_rt.builtins.a. The version must match clang's;
         #     we install clang 21.1.8, so compiler-rt-21.1.8.
         compiler-rt \
+        # --- SPIRV-Tools headers. ggml-vulkan.cpp includes
+        #     'spirv/unified1/spirv.hpp' (the generated SPIR-V opcode
+        #     table) which is part of SPIRV-Headers, not the Fedora
+        #     'spirv' meta-package. Also useful: spirv-tools-devel for
+        #     SPIRV-Tools API at link time if ggml-vulkan uses it.
+        spirv-headers-devel spirv-tools-devel \
         bison flex \
         expat-devel zlib-devel libzstd-devel libxml2-devel \
         # --- ROCm 7.2.2 (from the rocm.repo we just wrote; these are AMD's
