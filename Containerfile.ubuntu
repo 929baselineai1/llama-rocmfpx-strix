@@ -44,6 +44,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   ccache                                         -- rebuild speedup
 #   mold                                           -- faster linker than ld/lld
 #   python3, python3-pip, python3-venv             -- convert_hf_to_gguf.py etc.
+#   rocm-device-libs, hipblas-dev                  -- ROCmFPX cmake needs hipBLAS
+#                                                     config files. The rocm/dev
+#                                                     base image does NOT include
+#                                                     them; install explicitly.
+#                                                     See post-mortem: 2026-06-26-
+#                                                     container-polly-link-error-
+#                                                     and-strategy-pivot
 #   libvulkan1, mesa-vulkan-drivers                -- system Vulkan loader + RADV
 #                                                     (overridden by LD_PRELOAD at
 #                                                     runtime, but loader is needed)
@@ -58,6 +65,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ccache mold \
         python3 python3-pip python3-venv \
         python3-mako python3-yaml \
+        hipblas-dev rocm-device-libs \
         libvulkan1 mesa-vulkan-drivers \
         wget ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
@@ -94,7 +102,10 @@ RUN git clone --depth 1 --branch ${MESA_TAG} \
     && rm -rf /src/mesa
 
 # --- Layer 3: ciru-ai/ROCmFPX from source ---
-ARG ROCMFPX_REF=main
+# Pin to the same tag as Containerfile.fedora so both images
+# are reproducible from the same engine source. Update this
+# tag in BOTH Containerfiles when bumping.
+ARG ROCMFPX_REF=chadrockv2-runner-20260622
 RUN git clone --depth 1 --branch ${ROCMFPX_REF} \
         https://github.com/ciru-ai/ROCmFPX.git /src/ROCmFPX \
     && cd /src/ROCmFPX \
