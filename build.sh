@@ -107,8 +107,7 @@ EOF
         ninja-build \
         clang \
         git \
-        ccache \
-        wget
+        ccache
 
 elif [ "${OS_ID}" = "ubuntu" ]; then
     sudo apt-get update
@@ -121,8 +120,7 @@ elif [ "${OS_ID}" = "ubuntu" ]; then
         ninja-build \
         clang \
         git \
-        ccache \
-        wget
+        ccache
 fi
 
 # ---- Step 2: clone ROCmFPX ------------------------------------------------
