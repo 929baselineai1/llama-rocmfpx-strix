@@ -42,6 +42,48 @@ ROCMFPX_REF="7aa484a2f0a504dc612a3d74a068024f3e6d6353"
 ROCMFPX_REPO="https://github.com/ciru-ai/ROCmFPX.git"
 ROCM_VERSION="7.2.2"
 
+# Warm ccache download (set by --with-ccache). When set, the script downloads
+# and extracts the pre-warmed cache before building, dropping cold-build
+# time from ~30 min to ~10 min when the user's env matches the cache's
+# fingerprint. See the v0.2.0-ccache1 release notes for what "matches" means.
+CCACHE_TARBALL=""
+CCACHE_RELEASE_URL="https://github.com/929baselineai1/llama-rocmfpx-strix/releases/download/v0.2.0-ccache1/ccache-warm.tar.xz"
+
+# Parse args
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --with-ccache)
+            # Next arg is local path; if absent, download from release
+            if [ -n "${2:-}" ] && [ "${2:0:1}" != "-" ]; then
+                CCACHE_TARBALL="$2"
+                shift 2
+            else
+                CCACHE_TARBALL="__DOWNLOAD__"
+                shift 1
+            fi
+            ;;
+        --with-ccache=*)
+            CCACHE_TARBALL="${1#*=}"
+            shift 1
+            ;;
+        -h|--help)
+            echo "usage: $0 [--with-ccache [path/to/ccache-warm.tar.xz]]"
+            echo
+            echo "  --with-ccache [path]"
+            echo "      Pre-warm ccache before the build. With a path, use that local"
+            echo "      tarball. Without a path, download from the v0.2.0-ccache1 release"
+            echo "      (~560 MB; only worth it when your env matches the fingerprint in"
+            echo "      the release notes)."
+            exit 0
+            ;;
+        *)
+            echo "error: unknown argument: $1" >&2
+            echo "       pass --help for usage" >&2
+            exit 1
+            ;;
+    esac
+done
+
 # ---- OS detection ----------------------------------------------------------
 
 if [ -f /etc/os-release ]; then
@@ -72,6 +114,16 @@ esac
 echo "==> host:        ${OS_ID} ${OS_VERSION}"
 echo "==> ROCmFPX ref: ${ROCMFPX_REF}"
 echo "==> ROCm ver:    ${ROCM_VERSION}"
+
+# ---- Step 0.5: validate --with-ccache arg BEFORE doing anything expensive ----
+
+if [ -n "${CCACHE_TARBALL}" ]; then
+    if [ "${CCACHE_TARBALL}" != "__DOWNLOAD__" ] && [ ! -s "${CCACHE_TARBALL}" ]; then
+        echo "error: --with-ccache file not found: ${CCACHE_TARBALL}" >&2
+        exit 1
+    fi
+    echo "==> ccache:     pre-warm enabled (downloads ~560 MB if no local path given)"
+fi
 
 # ---- Step 1: install system packages ---------------------------------------
 # ROCm 7.2.2 lives in /opt/rocm-7.2.2 (AMD's official tarball layout). Mesa
@@ -138,6 +190,52 @@ cd "${ROCMFPX_DIR}"
 # idempotent — if we're already there, this is a no-op.
 git fetch origin "${ROCMFPX_REF}" --depth=1 2>/dev/null || true
 git checkout "${ROCMFPX_REF}"
+
+# ---- Step 2.5: optional pre-warmed ccache ---------------------------------
+
+if [ -n "${CCACHE_TARBALL}" ]; then
+    echo
+    echo "==> pre-warming ccache from ${CCACHE_TARBALL}"
+
+    # Resolve the actual file: either a local path the user gave us, or
+    # download from the GitHub release.
+    if [ "${CCACHE_TARBALL}" = "__DOWNLOAD__" ]; then
+        CCACHE_TARBALL="/tmp/ccache-warm.tar.xz"
+        if [ ! -s "${CCACHE_TARBALL}" ]; then
+            echo "    downloading ${CCACHE_RELEASE_URL}"
+            if command -v curl >/dev/null 2>&1; then
+                curl -fL --progress-bar -o "${CCACHE_TARBALL}" "${CCACHE_RELEASE_URL}" \
+                    || { echo "error: download failed" >&2; exit 1; }
+            elif command -v wget >/dev/null 2>&1; then
+                wget -O "${CCACHE_TARBALL}" "${CCACHE_RELEASE_URL}" \
+                    || { echo "error: download failed" >&2; exit 1; }
+            else
+                echo "error: neither curl nor wget found; install one and rerun" >&2
+                exit 1
+            fi
+        else
+            echo "    using existing ${CCACHE_TARBALL}"
+        fi
+    fi
+
+    # ccache defaults to ~/.cache/ccache; respect $CCACHE_DIR if set.
+    CCACHE_TARGET_DIR="${CCACHE_DIR:-${HOME}/.cache/ccache}"
+    mkdir -p "${CCACHE_TARGET_DIR}"
+
+    echo "    extracting to ${CCACHE_TARGET_DIR}"
+    tar -xJf "${CCACHE_TARBALL}" -C "${HOME}" \
+        || { echo "error: extraction failed" >&2; exit 1; }
+
+    # Quick sanity check: ccache sees N entries
+    if CCACHE_DIR="${CCACHE_TARGET_DIR}" ccache -s >/dev/null 2>&1; then
+        CCACHE_HITS=$(CCACHE_DIR="${CCACHE_TARGET_DIR}" ccache -s 2>/dev/null | awk '/Hits:/{print $2; exit}')
+        echo "    pre-warmed cache: ${CCACHE_HITS:-?} hits available"
+        echo "    (hit rate depends on your env matching the cache fingerprint;"
+        echo "     see the v0.2.0-ccache1 release notes)"
+    else
+        echo "    warning: could not query cache stats (may be empty or corrupt)"
+    fi
+fi
 
 # ---- Step 3: build llama-server + llama-bench -----------------------------
 
